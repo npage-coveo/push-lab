@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+scenarios.json
+
+# Local logs and generated artifacts
+logs/
+test-files/
+test-files/decoded_payload.pptx
