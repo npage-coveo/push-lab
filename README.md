@@ -33,43 +33,43 @@ List scenarios:
 Push a scenario:
 
 ```bash
-./pushlab push iframe-html
+./pushlab push "A guide to self-testing for COVID-19: Information for patients"
 ```
 
 Preview a push without sending it:
 
 ```bash
-./pushlab --dry-run push iframe-html
+./pushlab --dry-run push "A guide to self-testing for COVID-19: Information for patients"
 ```
 
 Push an inline HTML scenario:
 
 ```bash
-./pushlab push inline-html
+./pushlab push "Inline HTML Test"
 ```
 
 Push with a temporary document ID override:
 
 ```bash
-./pushlab push iframe-html --document-id "file://tmp/iframe-test.html"
+./pushlab push "A guide to self-testing for COVID-19: Information for patients" --document-id "file://tmp/iframe-test.html"
 ```
 
 Push with an explicit ordering ID:
 
 ```bash
-./pushlab push iframe-html --ordering-id 1737058123456
+./pushlab push "A guide to self-testing for COVID-19: Information for patients" --ordering-id 1737058123456
 ```
 
 Push multiple scenarios:
 
 ```bash
-./pushlab push iframe-html quotes-from-harry-potter
+./pushlab push "A guide to self-testing for COVID-19: Information for patients" "Quotes from Harry Potter"
 ```
 
 Delete a pushed scenario:
 
 ```bash
-./pushlab delete iframe-html
+./pushlab delete "A guide to self-testing for COVID-19: Information for patients"
 ```
 
 Rebuild the source from `scenarios.json` and then delete stale items:
@@ -81,7 +81,7 @@ Rebuild the source from `scenarios.json` and then delete stale items:
 Rebuild selected scenarios with a shorter delete grace period:
 
 ```bash
-./pushlab rebuild iframe-html inline-html --queue-delay 1
+./pushlab rebuild "A guide to self-testing for COVID-19: Information for patients" "Inline HTML Test" --queue-delay 1
 ```
 
 Preview a rebuild and inspect the generated payload log:
@@ -107,11 +107,11 @@ Use the tracked example fixtures without copying them:
 
 1. Put the file in `test-files/` if needed.
 2. Add a new entry to `scenarios.json`. Use `file_path` for file-based pushes or `data` for inline text. This repo does not support embedding compressed binary blobs directly in `scenarios.json`.
-3. Run it by name with `./pushlab push <name>`.
+3. Run it by title with `./pushlab push "<title>"`.
 
-The live `scenarios.json` and `test-files/` directories are intentionally local-only and ignored by git. Start from [scenarios.example.json](/tmp/push-api-main/scenarios.example.json) and [test-files.example](/tmp/push-api-main/test-files.example/README.md). You can run the tracked examples as-is with `--scenario-file scenarios.example.json`, or copy them into your own local `scenarios.json` and `test-files/` workspace.
+The live `scenarios.json` and `test-files/` directories are intentionally local-only and ignored by git. Start from [scenarios.example.json](/home/npage/projects/push-api/scenarios.example.json) and [test-files.example](/home/npage/projects/push-api/test-files.example/README.md). You can run the tracked examples as-is with `--scenario-file scenarios.example.json`, or copy them into your own local `scenarios.json` and `test-files/` workspace.
 
-You can also pass a different file with `--scenario-file`.
+Titles are the scenario identifiers, so they must stay unique. You can also pass a different file with `--scenario-file`.
 
 `./pushlab list` now labels each scenario as valid or invalid so malformed entries are easy to spot before a push or rebuild.
 

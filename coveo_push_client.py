@@ -33,7 +33,6 @@ RESERVED_METADATA_FIELDS = frozenset(
 
 @dataclass(frozen=True)
 class PushScenario:
-    name: str
     document_id: str
     title: str
     file_extension: str
@@ -131,7 +130,7 @@ class CoveoPushClient:
         self.log_event(
             "push",
             {
-                "scenario": scenario.name,
+                "scenario": scenario.title,
                 "url": f"{self.root}/organizations/{self.org}/sources/{self.source}/documents",
                 "params": build_push_params(scenario, params),
                 "json": document,
@@ -260,7 +259,7 @@ class CoveoPushClient:
             if conflicting_keys:
                 conflicts = ", ".join(sorted(conflicting_keys))
                 raise ValueError(
-                    f"Scenario '{scenario.name}' metadata contains reserved field(s): {conflicts}"
+                    f"Scenario '{describe_scenario(scenario)}' metadata contains reserved field(s): {conflicts}"
                 )
             document.update(scenario.metadata)
 
@@ -297,7 +296,7 @@ class CoveoPushClient:
         self.log_event(
             "create_file_container",
             {
-                "scenario": scenario.name,
+                "scenario": scenario.title,
                 "url": f"{self.root}/organizations/{self.org}/files",
                 "params": {"fileExtension": scenario.file_extension},
                 "response": {"fileId": file_container["fileId"]},
@@ -311,7 +310,7 @@ class CoveoPushClient:
         self.log_event(
             "upload_compressed_file",
             {
-                "scenario": scenario.name,
+                "scenario": scenario.title,
                 "uploadUri": file_container["uploadUri"],
                 "requiredHeaders": file_container.get("requiredHeaders", {}),
                 "binary": binary_info,
@@ -362,11 +361,17 @@ def build_push_params(scenario: PushScenario, base_params: dict[str, Any] | None
     return params
 
 
+def describe_scenario(scenario: PushScenario) -> str:
+    if scenario.title.strip():
+        return scenario.title
+    if scenario.document_id.strip():
+        return scenario.document_id
+    return "<unnamed scenario>"
+
+
 def validate_push_scenario(scenario: PushScenario) -> None:
     errors: list[str] = []
 
-    if not scenario.name.strip():
-        errors.append("name must be a non-empty string")
     if not scenario.document_id.strip():
         errors.append("document_id must be a non-empty string")
     if not scenario.title.strip():
@@ -391,7 +396,7 @@ def validate_push_scenario(scenario: PushScenario) -> None:
 
     if errors:
         joined = "; ".join(errors)
-        raise ValueError(f"Scenario '{scenario.name}' is invalid: {joined}")
+        raise ValueError(f"Scenario '{describe_scenario(scenario)}' is invalid: {joined}")
 
 
 def compute_retry_delay(retry_after_header: str | None, attempt: int, base_seconds: float) -> float:

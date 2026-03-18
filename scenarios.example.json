@@ -1,6 +1,5 @@
 [
   {
-    "name": "example-file-html",
     "document_id": "file://examples/welcome.html",
     "title": "Example File HTML",
     "file_extension": ".html",
@@ -16,7 +15,6 @@
     }
   },
   {
-    "name": "example-inline-html",
     "document_id": "file://examples/inline-example.html",
     "title": "Example Inline HTML",
     "file_extension": ".html",
