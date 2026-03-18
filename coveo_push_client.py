@@ -108,12 +108,17 @@ class CoveoPushClient:
             params={"fileExtension": file_extension},
             json={},
             timeout=30,
+            log_context={"operation": "create_file_container", "fileExtension": file_extension},
         )
         response.raise_for_status()
         return response.json()
 
     def upload_compressed_file(
-        self, upload_uri: str, required_headers: dict, compressed_bytes: bytes
+        self,
+        upload_uri: str,
+        required_headers: dict,
+        compressed_bytes: bytes,
+        log_context: dict[str, Any] | None = None,
     ) -> None:
         response = self.request_with_retry(
             "PUT",
@@ -121,34 +126,46 @@ class CoveoPushClient:
             data=compressed_bytes,
             headers=required_headers,
             timeout=120,
+            log_context=log_context,
         )
         response.raise_for_status()
 
     def push_scenario(self, scenario: PushScenario) -> requests.Response:
         validate_push_scenario(scenario)
         document, params, binary_info = self.build_push_request(scenario)
-        self.log_event(
-            "push",
-            {
-                "scenario": scenario.title,
-                "url": f"{self.root}/organizations/{self.org}/sources/{self.source}/documents",
-                "params": build_push_params(scenario, params),
-                "json": document,
-                "binary": binary_info,
-                "dry_run": self.dry_run,
-            },
-        )
+        request_params = build_push_params(scenario, params)
+        request_headers = {**self.headers, "Content-Type": "application/json"}
+        request_url = f"{self.root}/organizations/{self.org}/sources/{self.source}/documents"
+        log_context = {
+            "operation": "push",
+            "scenario": scenario.title,
+            "binary": binary_info,
+        }
 
         if self.dry_run:
-            return make_dry_run_response(202, "DRY RUN: push skipped")
+            response = make_dry_run_response(202, "DRY RUN: push skipped")
+            self.log_http_exchange(
+                request={
+                    "method": "PUT",
+                    "url": request_url,
+                    "headers": sanitize_headers(request_headers),
+                    "params": request_params,
+                    "json": document,
+                    "timeout": 30,
+                },
+                response=response,
+                context={**log_context, "dry_run": True},
+            )
+            return response
 
         response = self.request_with_retry(
             "PUT",
-            f"{self.root}/organizations/{self.org}/sources/{self.source}/documents",
-            headers={**self.headers, "Content-Type": "application/json"},
-            params=build_push_params(scenario, params),
+            request_url,
+            headers=request_headers,
+            params=request_params,
             json=document,
             timeout=30,
+            log_context=log_context,
         )
         response.raise_for_status()
         return response
@@ -156,60 +173,92 @@ class CoveoPushClient:
     def delete_document(self, document_id: str) -> requests.Response:
         if not document_id or not document_id.strip():
             raise ValueError("document_id must be a non-empty string")
-        self.log_event(
-            "delete",
-            {
-                "documentId": document_id,
-                "url": f"{self.root}/organizations/{self.org}/sources/{self.source}/documents",
-                "params": {"documentId": document_id},
-                "dry_run": self.dry_run,
-            },
-        )
+        request_url = f"{self.root}/organizations/{self.org}/sources/{self.source}/documents"
+        request_params = {"documentId": document_id}
+        log_context = {"operation": "delete_document", "documentId": document_id}
         if self.dry_run:
-            return make_dry_run_response(202, "DRY RUN: delete skipped")
+            response = make_dry_run_response(202, "DRY RUN: delete skipped")
+            self.log_http_exchange(
+                request={
+                    "method": "DELETE",
+                    "url": request_url,
+                    "headers": sanitize_headers(self.headers),
+                    "params": request_params,
+                    "timeout": 30,
+                },
+                response=response,
+                context={**log_context, "dry_run": True},
+            )
+            return response
 
         response = self.request_with_retry(
             "DELETE",
-            f"{self.root}/organizations/{self.org}/sources/{self.source}/documents",
+            request_url,
             headers=self.headers,
-            params={"documentId": document_id},
+            params=request_params,
             timeout=30,
+            log_context=log_context,
         )
         response.raise_for_status()
         return response
 
     def delete_older_than(self, ordering_id: int, queue_delay: int = 15) -> requests.Response:
-        self.log_event(
-            "delete_older_than",
-            {
-                "orderingId": ordering_id,
-                "queueDelay": queue_delay,
-                "url": f"{self.root}/organizations/{self.org}/sources/{self.source}/documents/olderthan",
-                "params": {"orderingId": ordering_id, "queueDelay": queue_delay},
-                "dry_run": self.dry_run,
-            },
-        )
+        request_url = f"{self.root}/organizations/{self.org}/sources/{self.source}/documents/olderthan"
+        request_headers = {**self.headers, "Accept": "application/json"}
+        request_params = {"orderingId": ordering_id, "queueDelay": queue_delay}
+        request_json = {}
+        log_context = {
+            "operation": "delete_older_than",
+            "orderingId": ordering_id,
+            "queueDelay": queue_delay,
+        }
         if self.dry_run:
-            return make_dry_run_response(202, "DRY RUN: delete older than skipped")
+            response = make_dry_run_response(202, "DRY RUN: delete older than skipped")
+            self.log_http_exchange(
+                request={
+                    "method": "DELETE",
+                    "url": request_url,
+                    "headers": sanitize_headers(request_headers),
+                    "params": request_params,
+                    "json": request_json,
+                    "timeout": 30,
+                },
+                response=response,
+                context={**log_context, "dry_run": True},
+            )
+            return response
 
         response = self.request_with_retry(
             "DELETE",
-            f"{self.root}/organizations/{self.org}/sources/{self.source}/documents/olderthan",
-            headers={**self.headers, "Accept": "application/json"},
-            params={"orderingId": ordering_id, "queueDelay": queue_delay},
-            json={},
+            request_url,
+            headers=request_headers,
+            params=request_params,
+            json=request_json,
             timeout=30,
+            log_context=log_context,
         )
         response.raise_for_status()
         return response
 
-    def request_with_retry(self, method: str, url: str, **kwargs: Any) -> Response:
+    def request_with_retry(
+        self,
+        method: str,
+        url: str,
+        log_context: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Response:
         retryable_statuses = {429, 500, 502, 503, 504}
         last_error: Exception | None = None
 
         for attempt in range(self.max_retries + 1):
+            request_payload = build_request_log_payload(method, url, kwargs, attempt)
             try:
                 response = requests.request(method, url, **kwargs)
+                self.log_http_exchange(
+                    request=request_payload,
+                    response=response,
+                    context=log_context,
+                )
                 if response.status_code not in retryable_statuses:
                     return response
 
@@ -223,6 +272,12 @@ class CoveoPushClient:
                 )
             except requests.RequestException as error:
                 last_error = error
+                self.log_http_exchange(
+                    request=request_payload,
+                    response=None,
+                    context=log_context,
+                    error=error,
+                )
                 if attempt == self.max_retries:
                     raise
                 delay_seconds = compute_retry_delay(
@@ -293,27 +348,15 @@ class CoveoPushClient:
             return document, params, binary_info
 
         file_container = self.create_file_container(scenario.file_extension)
-        self.log_event(
-            "create_file_container",
-            {
-                "scenario": scenario.title,
-                "url": f"{self.root}/organizations/{self.org}/files",
-                "params": {"fileExtension": scenario.file_extension},
-                "response": {"fileId": file_container["fileId"]},
-            },
-        )
         self.upload_compressed_file(
             file_container["uploadUri"],
             file_container.get("requiredHeaders", {}),
             compressed_bytes,
-        )
-        self.log_event(
-            "upload_compressed_file",
-            {
+            log_context={
+                "operation": "upload_compressed_file",
                 "scenario": scenario.title,
-                "uploadUri": file_container["uploadUri"],
-                "requiredHeaders": file_container.get("requiredHeaders", {}),
                 "binary": binary_info,
+                "fileId": file_container["fileId"],
             },
         )
         document["compressedBinaryDataFileId"] = file_container["fileId"]
@@ -330,6 +373,31 @@ class CoveoPushClient:
         }
         with self.log_path.open("a", encoding="utf-8") as log_file:
             log_file.write(json.dumps(entry, ensure_ascii=True) + "\n")
+
+    def log_http_exchange(
+        self,
+        request: dict[str, Any],
+        response: Response | None,
+        context: dict[str, Any] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "request": request,
+            "context": context or {},
+        }
+        if response is not None:
+            payload["response"] = {
+                "status_code": response.status_code,
+                "reason": response.reason,
+                "headers": dict(response.headers),
+                "text": response.text,
+            }
+        if error is not None:
+            payload["error"] = {
+                "type": type(error).__name__,
+                "message": str(error),
+            }
+        self.log_event("http_exchange", payload)
 
 
 def guess_content_type(scenario: PushScenario) -> str:
@@ -367,6 +435,51 @@ def describe_scenario(scenario: PushScenario) -> str:
     if scenario.document_id.strip():
         return scenario.document_id
     return "<unnamed scenario>"
+
+
+def sanitize_headers(headers: dict[str, Any] | None) -> dict[str, Any]:
+    sanitized: dict[str, Any] = {}
+    for key, value in (headers or {}).items():
+        if key.lower() == "authorization":
+            sanitized[key] = "<redacted>"
+        else:
+            sanitized[key] = value
+    return sanitized
+
+
+def summarize_request_data(data: Any) -> Any:
+    if isinstance(data, (bytes, bytearray)):
+        return {
+            "type": "bytes",
+            "length": len(data),
+        }
+    return data
+
+
+def build_request_log_payload(
+    method: str,
+    url: str,
+    kwargs: dict[str, Any],
+    attempt: int,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "method": method,
+        "url": url,
+        "attempt": attempt + 1,
+    }
+
+    if "headers" in kwargs:
+        payload["headers"] = sanitize_headers(kwargs.get("headers"))
+    if "params" in kwargs:
+        payload["params"] = kwargs.get("params")
+    if "json" in kwargs:
+        payload["json"] = kwargs.get("json")
+    if "data" in kwargs:
+        payload["data"] = summarize_request_data(kwargs.get("data"))
+    if "timeout" in kwargs:
+        payload["timeout"] = kwargs.get("timeout")
+
+    return payload
 
 
 def validate_push_scenario(scenario: PushScenario) -> None:
