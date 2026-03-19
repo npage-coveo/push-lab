@@ -14,14 +14,16 @@ Reference:
 ## What matters for this repo
 
 - The `documentId` is required and should be the item URI.
+- The Push API is the source of truth. Do not propose rejecting unknown scenario keys just because this harness does not model them explicitly; if we need a new API field, we should prefer adding support over adding stricter validation.
 - When using `compressedBinaryDataFileId`, the request should include the `compressionType` query parameter.
 - The official API reference shows region-specific roots:
   - US East: `https://api.cloud.coveo.com/push/v1`
   - Canada: `https://api-ca.cloud.coveo.com/push/v1`
   - Ireland: `https://api-eu.cloud.coveo.com/push/v1`
-- For a single item body, Coveo expects one content input. This repo currently uses:
+- For a single item body, Coveo expects one content input when content is present. This repo currently uses:
   - `data`
   - `compressedBinaryDataFileId`
+  - no content field at all for metadata-only pushes
 - Useful optional fields include:
   - `fileExtension`
   - `parentId`
@@ -35,7 +37,8 @@ Reference:
 
 - Inline `data` pushes for HTML/text items
 - File-container upload flow with `compressedBinaryDataFileId`
-- `compressionType` query parameter
+- `compressionType` query parameter for file-container pushes only
+- Metadata-only pushes with no `data` or `compressedBinaryDataFileId`
 - Region override through `COVEO_PUSH_API_ROOT`
 - Scenario metadata via `metadata`
 - `parentId`

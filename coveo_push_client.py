@@ -316,7 +316,7 @@ class CoveoPushClient:
             if conflicting_keys:
                 conflicts = ", ".join(sorted(conflicting_keys))
                 raise ValueError(
-                    f"Scenario '{describe_scenario(scenario)}' metadata contains reserved field(s): {conflicts}"
+                    f"Tool constraint: scenario '{describe_scenario(scenario)}' metadata contains reserved field(s) this harness cannot place inside metadata: {conflicts}"
                 )
             document.update(scenario.metadata)
 
@@ -352,7 +352,7 @@ class CoveoPushClient:
 
         if not scenario.file_extension:
             raise ValueError(
-                f"Scenario '{describe_scenario(scenario)}' must define file_extension for file_path pushes"
+                f"Tool constraint: scenario '{describe_scenario(scenario)}' must define file_extension for file_path pushes"
             )
         file_container = self.create_file_container(scenario.file_extension)
         self.upload_compressed_file(
@@ -471,22 +471,22 @@ def validate_push_scenario(scenario: PushScenario) -> None:
     errors: list[str] = []
 
     if not scenario.document_id.strip():
-        errors.append("document_id must be a non-empty string")
+        errors.append("API-invalid: document_id must be a non-empty string")
 
     has_data = scenario.data is not None
     has_file = bool(scenario.file_path)
     if has_data and has_file:
-        errors.append("define either file_path or data, not both")
+        errors.append("Tool constraint: define either file_path or data, not both")
     if has_file and not scenario.file_extension:
-        errors.append("file_extension is required for file_path pushes in this tool")
+        errors.append("Tool constraint: file_extension is required for file_path pushes in this tool")
 
     if scenario.file_path:
         file_path = Path(scenario.file_path)
         if not file_path.is_file():
-            errors.append(f"file_path does not exist: {scenario.file_path}")
+            errors.append(f"Tool constraint: file_path does not exist on disk: {scenario.file_path}")
 
     if scenario.metadata is not None and not isinstance(scenario.metadata, dict):
-        errors.append("metadata must be an object when provided")
+        errors.append("Tool constraint: metadata must be an object when provided")
 
     if errors:
         joined = "; ".join(errors)
