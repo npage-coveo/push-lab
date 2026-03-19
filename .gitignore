@@ -3,6 +3,7 @@
 __pycache__/
 *.py[cod]
 scenarios.json
+pushlab.yaml
 
 # Local logs and generated artifacts
 logs/
