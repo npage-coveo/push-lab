@@ -10,6 +10,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 cp scenarios.example.json scenarios.json
+cp pushlab.config.example.yaml pushlab.yaml
 ```
 
 Update `.env` with your values:
@@ -21,6 +22,8 @@ COVEO_API_KEY=your-api-key
 # Optional for non-US regions, for example:
 # COVEO_PUSH_API_ROOT=https://api-ca.cloud.coveo.com/push/v1
 ```
+
+Optional: update `pushlab.yaml` to change local runtime defaults such as retries, timeouts, queue delay, log path, scenario file, and default compression type. `pushlab.config.example.yaml` is only a tracked template; the tool automatically reads `pushlab.yaml` when that file exists. CLI flags still override the YAML values for a single run.
 
 ## Commands
 
@@ -97,6 +100,12 @@ Use a different JSON file:
 ./pushlab --scenario-file custom-scenarios.json list
 ```
 
+Use a different YAML config file:
+
+```bash
+./pushlab --config custom-pushlab.yaml list
+```
+
 Use the tracked example fixtures without copying them:
 
 ```bash
@@ -116,5 +125,29 @@ Scenario selection uses `document_id`, since it is required by the API and uniqu
 `./pushlab list` now labels each scenario as valid or invalid so malformed entries are easy to spot before a push or rebuild.
 
 Each run writes a JSONL payload log under `logs/payloads/` by default. You can change that with `--log-dir`.
+
+## Runtime defaults
+
+Runtime defaults live in `pushlab.yaml` when that file exists. Start from [pushlab.config.example.yaml](/home/npage/projects/push-api/pushlab.config.example.yaml).
+
+How config loading works:
+
+- `pushlab.config.example.yaml` is a tracked example file and is not read automatically
+- `pushlab.yaml` is the local file the tool reads by default when it exists
+- `--config custom-pushlab.yaml` overrides the default config file path for that run
+- CLI flags override YAML values for the current command
+
+Supported settings:
+
+- `scenario_file`
+- `max_retries`
+- `backoff_base_seconds`
+- `log_dir`
+- `default_queue_delay`
+- `request_timeout_seconds`
+- `upload_timeout_seconds`
+- `default_compression_type`
+
+When testing `delete older than` flows, set `default_queue_delay: 0` in `pushlab.yaml` or pass `--queue-delay 0`. That avoids waiting 15 minutes to see the operation appear in the Admin Console log browser.
 
 See [`docs/coveo-push-api-notes.md`](/home/npage/projects/push-api/docs/coveo-push-api-notes.md) for repo-specific notes from the official Add or update an item reference.

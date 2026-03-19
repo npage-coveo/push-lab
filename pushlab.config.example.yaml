@@ -1,0 +1,10 @@
+# Copy this file to pushlab.yaml to make these values your local defaults.
+scenario_file: scenarios.json
+max_retries: 5
+backoff_base_seconds: 1.0
+log_dir: logs/payloads
+# Set to 0 when testing delete older than flows and you want to see them in logs right away.
+default_queue_delay: 15
+request_timeout_seconds: 30
+upload_timeout_seconds: 120
+default_compression_type: ZLib
