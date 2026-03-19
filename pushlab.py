@@ -4,6 +4,8 @@ from dataclasses import replace
 from pathlib import Path
 import time
 
+import requests
+
 from coveo_push_client import CoveoPushClient, PushScenario, validate_push_scenario
 
 
@@ -42,11 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("list", help="List available scenarios")
 
     push_parser = subparsers.add_parser("push", help="Push one or more scenarios")
-    push_parser.add_argument("scenarios", nargs="+", help="Scenario title(s) to push")
+    push_parser.add_argument("scenarios", nargs="+", help="Scenario document_id value(s) to push")
     add_push_overrides(push_parser)
 
     delete_parser = subparsers.add_parser("delete", help="Delete one pushed document")
-    delete_parser.add_argument("scenario", help="Scenario title to delete")
+    delete_parser.add_argument("scenario", help="Scenario document_id value to delete")
     delete_parser.add_argument("--document-id", help="Override the document ID for deletion")
 
     rebuild_parser = subparsers.add_parser(
@@ -56,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
     rebuild_parser.add_argument(
         "scenarios",
         nargs="*",
-        help="Scenario titles to rebuild. If omitted, all scenarios from the JSON file are used.",
+        help="Scenario document_id value(s) to rebuild. If omitted, all scenarios from the JSON file are used.",
     )
     rebuild_parser.add_argument(
         "--queue-delay",
@@ -102,10 +104,19 @@ def load_scenarios(json_path: str | None = None) -> dict[str, PushScenario]:
         if not isinstance(item, dict):
             raise ValueError(f"Scenario #{index} must be a JSON object")
 
+        required_fields = ("document_id",)
+        missing_fields = [field for field in required_fields if field not in item]
+        if missing_fields:
+            scenario_label = item.get("title") or item.get("name") or f"#{index}"
+            missing = ", ".join(missing_fields)
+            raise ValueError(
+                f"Scenario {scenario_label!r} is missing required field(s): {missing}"
+            )
+
         scenario = PushScenario(
             document_id=item["document_id"],
-            title=item["title"],
-            file_extension=item["file_extension"],
+            title=item.get("title"),
+            file_extension=item.get("file_extension"),
             file_path=item.get("file_path"),
             data=item.get("data"),
             compression_type=item.get("compression_type", "ZLib"),
@@ -117,9 +128,9 @@ def load_scenarios(json_path: str | None = None) -> dict[str, PushScenario]:
             permissions=item.get("permissions"),
             metadata=item.get("metadata"),
         )
-        if scenario.title in scenarios:
-            raise ValueError(f"Duplicate scenario title '{scenario.title}' in {scenario_file}")
-        scenarios[scenario.title] = scenario
+        if scenario.document_id in scenarios:
+            raise ValueError(f"Duplicate scenario document_id '{scenario.document_id}' in {scenario_file}")
+        scenarios[scenario.document_id] = scenario
 
     return scenarios
 
@@ -127,7 +138,10 @@ def load_scenarios(json_path: str | None = None) -> dict[str, PushScenario]:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
-    scenarios = load_scenarios(args.scenario_file)
+    try:
+        scenarios = load_scenarios(args.scenario_file)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError) as error:
+        raise SystemExit(str(error)) from error
     client = CoveoPushClient.from_env(
         max_retries=args.max_retries,
         backoff_base_seconds=args.backoff_base_seconds,
@@ -136,19 +150,23 @@ def main() -> None:
     )
 
     if args.command == "list":
-        for title, scenario in sorted(scenarios.items()):
+        for document_id, scenario in sorted(scenarios.items()):
             location = describe_scenario_location(scenario)
             try:
                 validate_push_scenario(scenario)
                 status = "valid"
             except ValueError as error:
                 status = f"invalid: {error}"
-            print(f"{title} [{location}] ({status})")
+            title = scenario.title or "<no title>"
+            print(f"{document_id}: {title} [{location}] ({status})")
         print(f"Payload log: {client.log_path}")
         return
 
     if args.command == "push":
-        push_scenarios(client, scenarios, args.scenarios, args)
+        try:
+            push_scenarios(client, scenarios, args.scenarios, args)
+        except requests.HTTPError as error:
+            raise SystemExit(format_http_error(error, client.log_path)) from error
         return
 
     if args.command == "delete":
@@ -156,6 +174,8 @@ def main() -> None:
         document_id = args.document_id or scenario.document_id
         try:
             response = client.delete_document(document_id)
+        except requests.HTTPError as error:
+            raise SystemExit(format_http_error(error, client.log_path)) from error
         except ValueError as error:
             raise SystemExit(str(error)) from error
         print(f"Deleted {document_id}: {response.status_code} {response.text}")
@@ -163,18 +183,21 @@ def main() -> None:
         return
 
     if args.command == "rebuild":
-        rebuild_scenarios(client, scenarios, args.scenarios, args.queue_delay, args.start_ordering_id)
+        try:
+            rebuild_scenarios(client, scenarios, args.scenarios, args.queue_delay, args.start_ordering_id)
+        except requests.HTTPError as error:
+            raise SystemExit(format_http_error(error, client.log_path)) from error
         print(f"Payload log: {client.log_path}")
         return
 
     parser.error(f"unknown command: {args.command}")
 
 
-def resolve_scenario(scenarios: dict[str, PushScenario], title: str) -> PushScenario:
-    scenario = scenarios.get(title)
+def resolve_scenario(scenarios: dict[str, PushScenario], document_id: str) -> PushScenario:
+    scenario = scenarios.get(document_id)
     if not scenario:
         available = ", ".join(sorted(scenarios))
-        raise SystemExit(f"unknown scenario title '{title}'. Available: {available}")
+        raise SystemExit(f"unknown scenario document_id '{document_id}'. Available: {available}")
     return scenario
 
 
@@ -209,44 +232,57 @@ def validate_scenarios_or_exit(scenarios: list[PushScenario]) -> None:
         raise SystemExit("\n".join(errors))
 
 
+def format_http_error(error: requests.HTTPError, log_path: Path) -> str:
+    response = error.response
+    if response is None:
+        return f"{error}\nCheck payload logs in {log_path.parent}"
+
+    response_text = response.text.strip() or "<empty response body>"
+    return (
+        f"Push API request failed: {response.status_code} {response.reason}\n"
+        f"Response: {response_text}\n"
+        f"Check payload logs in {log_path.parent}"
+    )
+
+
 def push_scenarios(
     client: CoveoPushClient,
     scenarios: dict[str, PushScenario],
-    scenario_titles: list[str],
+    scenario_document_ids: list[str],
     args: argparse.Namespace,
 ) -> None:
     selected_scenarios = [
-        apply_push_overrides(resolve_scenario(scenarios, title), args)
-        for title in scenario_titles
+        apply_push_overrides(resolve_scenario(scenarios, document_id), args)
+        for document_id in scenario_document_ids
     ]
     validate_scenarios_or_exit(selected_scenarios)
 
     for scenario in selected_scenarios:
         response = client.push_scenario(scenario)
-        print(f"Pushed {scenario.title}: {response.status_code} {response.text}")
+        print(f"Pushed {scenario.document_id}: {response.status_code} {response.text}")
     print(f"Payload log: {client.log_path}")
 
 
 def rebuild_scenarios(
     client: CoveoPushClient,
     scenarios: dict[str, PushScenario],
-    selected_titles: list[str],
+    selected_document_ids: list[str],
     queue_delay: int,
     start_ordering_id: int | None,
 ) -> None:
-    ordered_titles = selected_titles or list(scenarios.keys())
+    ordered_document_ids = selected_document_ids or list(scenarios.keys())
     base_ordering_id = start_ordering_id or int(time.time() * 1000)
     rebuild_floor = base_ordering_id + 1
     selected_scenarios = [
-        replace(resolve_scenario(scenarios, title), ordering_id=base_ordering_id + index + 1)
-        for index, title in enumerate(ordered_titles)
+        replace(resolve_scenario(scenarios, document_id), ordering_id=base_ordering_id + index + 1)
+        for index, document_id in enumerate(ordered_document_ids)
     ]
     validate_scenarios_or_exit(selected_scenarios)
 
     for scenario in selected_scenarios:
         response = client.push_scenario(scenario)
         print(
-            f"Pushed {scenario.title} with orderingId {scenario.ordering_id}: "
+            f"Pushed {scenario.document_id} with orderingId {scenario.ordering_id}: "
             f"{response.status_code} {response.text}"
         )
 

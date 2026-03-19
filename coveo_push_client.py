@@ -1,4 +1,3 @@
-import mimetypes
 import os
 import random
 import time
@@ -34,8 +33,8 @@ RESERVED_METADATA_FIELDS = frozenset(
 @dataclass(frozen=True)
 class PushScenario:
     document_id: str
-    title: str
-    file_extension: str
+    title: str | None = None
+    file_extension: str | None = None
     file_path: str | None = None
     data: str | None = None
     compression_type: str = "ZLib"
@@ -138,7 +137,8 @@ class CoveoPushClient:
         request_url = f"{self.root}/organizations/{self.org}/sources/{self.source}/documents"
         log_context = {
             "operation": "push",
-            "scenario": scenario.title,
+            "documentId": scenario.document_id,
+            "title": scenario.title,
             "binary": binary_info,
         }
 
@@ -294,12 +294,14 @@ class CoveoPushClient:
         raise RuntimeError("request_with_retry exhausted unexpectedly")
 
     def build_push_request(self, scenario: PushScenario) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-        document = {
-            "documentId": scenario.document_id,
-            "title": scenario.title,
-            "fileExtension": scenario.file_extension,
-            "contentType": scenario.content_type or guess_content_type(scenario),
-        }
+        document: dict[str, Any] = {"documentId": scenario.document_id}
+
+        if scenario.title is not None:
+            document["title"] = scenario.title
+        if scenario.file_extension is not None:
+            document["fileExtension"] = scenario.file_extension
+        if scenario.content_type is not None:
+            document["contentType"] = scenario.content_type
 
         if scenario.clickable_uri:
             document["clickableUri"] = scenario.clickable_uri
@@ -328,7 +330,8 @@ class CoveoPushClient:
             return document, params, binary_info
 
         if not scenario.file_path:
-            raise RuntimeError("Scenario must define one of file_path or data")
+            binary_info["mode"] = "metadata_only"
+            return document, params, binary_info
 
         file_path = Path(scenario.file_path)
         with file_path.open("rb") as input_file:
@@ -347,6 +350,10 @@ class CoveoPushClient:
             params["compressionType"] = scenario.compression_type
             return document, params, binary_info
 
+        if not scenario.file_extension:
+            raise ValueError(
+                f"Scenario '{describe_scenario(scenario)}' must define file_extension for file_path pushes"
+            )
         file_container = self.create_file_container(scenario.file_extension)
         self.upload_compressed_file(
             file_container["uploadUri"],
@@ -354,7 +361,8 @@ class CoveoPushClient:
             compressed_bytes,
             log_context={
                 "operation": "upload_compressed_file",
-                "scenario": scenario.title,
+                "documentId": scenario.document_id,
+                "title": scenario.title,
                 "binary": binary_info,
                 "fileId": file_container["fileId"],
             },
@@ -399,29 +407,6 @@ class CoveoPushClient:
             }
         self.log_event("http_exchange", payload)
 
-
-def guess_content_type(scenario: PushScenario) -> str:
-    guessed = None
-    if scenario.file_path:
-        guessed, _ = mimetypes.guess_type(str(Path(scenario.file_path)))
-        if guessed:
-            return guessed
-
-    if scenario.data is not None and scenario.file_extension.lower() in {".html", ".htm"}:
-        return "text/html"
-
-    if scenario.data is not None and scenario.file_extension.lower() in {".txt", ".text"}:
-        return "text/plain"
-
-    file_extension = scenario.file_extension
-    extension_map = {
-        ".html": "text/html",
-        ".pdf": "application/pdf",
-        ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    }
-    return extension_map.get(file_extension.lower(), "application/octet-stream")
-
-
 def build_push_params(scenario: PushScenario, base_params: dict[str, Any] | None = None) -> dict[str, Any]:
     params: dict[str, Any] = dict(base_params or {"documentId": scenario.document_id})
     if scenario.ordering_id is not None:
@@ -430,10 +415,10 @@ def build_push_params(scenario: PushScenario, base_params: dict[str, Any] | None
 
 
 def describe_scenario(scenario: PushScenario) -> str:
-    if scenario.title.strip():
-        return scenario.title
     if scenario.document_id.strip():
         return scenario.document_id
+    if scenario.title and scenario.title.strip():
+        return scenario.title
     return "<unnamed scenario>"
 
 
@@ -487,17 +472,13 @@ def validate_push_scenario(scenario: PushScenario) -> None:
 
     if not scenario.document_id.strip():
         errors.append("document_id must be a non-empty string")
-    if not scenario.title.strip():
-        errors.append("title must be a non-empty string")
-    if not scenario.file_extension.strip():
-        errors.append("file_extension must be a non-empty string")
 
     has_data = scenario.data is not None
     has_file = bool(scenario.file_path)
     if has_data and has_file:
         errors.append("define either file_path or data, not both")
-    elif not has_data and not has_file:
-        errors.append("define one of file_path or data")
+    if has_file and not scenario.file_extension:
+        errors.append("file_extension is required for file_path pushes in this tool")
 
     if scenario.file_path:
         file_path = Path(scenario.file_path)
