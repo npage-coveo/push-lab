@@ -7,4 +7,3 @@ log_dir: logs/payloads
 default_queue_delay: 15
 request_timeout_seconds: 30
 upload_timeout_seconds: 120
-default_compression_type: ZLib
