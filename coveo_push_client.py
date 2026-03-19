@@ -57,6 +57,8 @@ class CoveoPushClient:
         max_retries: int = 5,
         backoff_base_seconds: float = 1.0,
         log_dir: str = "logs/payloads",
+        request_timeout_seconds: int = 30,
+        upload_timeout_seconds: int = 120,
         dry_run: bool = False,
     ) -> None:
         self.org = org
@@ -65,6 +67,8 @@ class CoveoPushClient:
         self.headers = {"Authorization": f"Bearer {api_key}"}
         self.max_retries = max_retries
         self.backoff_base_seconds = backoff_base_seconds
+        self.request_timeout_seconds = request_timeout_seconds
+        self.upload_timeout_seconds = upload_timeout_seconds
         self.dry_run = dry_run
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -76,6 +80,8 @@ class CoveoPushClient:
         max_retries: int = 5,
         backoff_base_seconds: float = 1.0,
         log_dir: str = "logs/payloads",
+        request_timeout_seconds: int = 30,
+        upload_timeout_seconds: int = 120,
         dry_run: bool = False,
     ) -> "CoveoPushClient":
         load_dotenv()
@@ -96,6 +102,8 @@ class CoveoPushClient:
             max_retries=max_retries,
             backoff_base_seconds=backoff_base_seconds,
             log_dir=log_dir,
+            request_timeout_seconds=request_timeout_seconds,
+            upload_timeout_seconds=upload_timeout_seconds,
             dry_run=dry_run,
         )
 
@@ -106,7 +114,7 @@ class CoveoPushClient:
             headers={**self.headers, "Content-Type": "application/json"},
             params={"fileExtension": file_extension},
             json={},
-            timeout=30,
+            timeout=self.request_timeout_seconds,
             log_context={"operation": "create_file_container", "fileExtension": file_extension},
         )
         response.raise_for_status()
@@ -124,7 +132,7 @@ class CoveoPushClient:
             upload_uri,
             data=compressed_bytes,
             headers=required_headers,
-            timeout=120,
+            timeout=self.upload_timeout_seconds,
             log_context=log_context,
         )
         response.raise_for_status()
@@ -151,7 +159,7 @@ class CoveoPushClient:
                     "headers": sanitize_headers(request_headers),
                     "params": request_params,
                     "json": document,
-                    "timeout": 30,
+                    "timeout": self.request_timeout_seconds,
                 },
                 response=response,
                 context={**log_context, "dry_run": True},
@@ -164,7 +172,7 @@ class CoveoPushClient:
             headers=request_headers,
             params=request_params,
             json=document,
-            timeout=30,
+            timeout=self.request_timeout_seconds,
             log_context=log_context,
         )
         response.raise_for_status()
@@ -184,7 +192,7 @@ class CoveoPushClient:
                     "url": request_url,
                     "headers": sanitize_headers(self.headers),
                     "params": request_params,
-                    "timeout": 30,
+                    "timeout": self.request_timeout_seconds,
                 },
                 response=response,
                 context={**log_context, "dry_run": True},
@@ -196,7 +204,7 @@ class CoveoPushClient:
             request_url,
             headers=self.headers,
             params=request_params,
-            timeout=30,
+            timeout=self.request_timeout_seconds,
             log_context=log_context,
         )
         response.raise_for_status()
@@ -221,7 +229,7 @@ class CoveoPushClient:
                     "headers": sanitize_headers(request_headers),
                     "params": request_params,
                     "json": request_json,
-                    "timeout": 30,
+                    "timeout": self.request_timeout_seconds,
                 },
                 response=response,
                 context={**log_context, "dry_run": True},
@@ -234,7 +242,7 @@ class CoveoPushClient:
             headers=request_headers,
             params=request_params,
             json=request_json,
-            timeout=30,
+            timeout=self.request_timeout_seconds,
             log_context=log_context,
         )
         response.raise_for_status()

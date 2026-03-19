@@ -7,31 +7,49 @@ import time
 import requests
 
 from coveo_push_client import CoveoPushClient, PushScenario, validate_push_scenario
+from runtime_config import DEFAULT_CONFIG_PATH, RuntimeConfig, load_runtime_config
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(defaults: RuntimeConfig) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run Coveo Push API test scenarios.")
     parser.add_argument(
+        "--config",
+        default=DEFAULT_CONFIG_PATH,
+        help="YAML file containing runtime defaults",
+    )
+    parser.add_argument(
         "--scenario-file",
-        default="scenarios.json",
+        default=defaults.scenario_file,
         help="JSON file containing scenario definitions",
     )
     parser.add_argument(
         "--max-retries",
         type=int,
-        default=5,
+        default=defaults.max_retries,
         help="Maximum retries for transient Push API failures",
     )
     parser.add_argument(
         "--backoff-base-seconds",
         type=float,
-        default=1.0,
+        default=defaults.backoff_base_seconds,
         help="Base delay in seconds for exponential backoff",
     )
     parser.add_argument(
         "--log-dir",
-        default="logs/payloads",
+        default=defaults.log_dir,
         help="Directory where JSONL payload logs are written",
+    )
+    parser.add_argument(
+        "--request-timeout-seconds",
+        type=int,
+        default=defaults.request_timeout_seconds,
+        help="Timeout in seconds for standard Push API requests",
+    )
+    parser.add_argument(
+        "--upload-timeout-seconds",
+        type=int,
+        default=defaults.upload_timeout_seconds,
+        help="Timeout in seconds for file-container uploads",
     )
     parser.add_argument(
         "--dry-run",
@@ -63,7 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     rebuild_parser.add_argument(
         "--queue-delay",
         type=int,
-        default=15,
+        default=defaults.default_queue_delay,
         help="Grace period in minutes for the delete older-than request",
     )
     rebuild_parser.add_argument(
@@ -82,7 +100,10 @@ def add_push_overrides(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ordering-id", type=int, help="Override the orderingId query parameter")
 
 
-def load_scenarios(json_path: str | None = None) -> dict[str, PushScenario]:
+def load_scenarios(
+    json_path: str | None = None,
+    default_compression_type: str = "ZLib",
+) -> dict[str, PushScenario]:
     scenario_file = Path(json_path) if json_path else Path("scenarios.json")
     if not scenario_file.exists():
         example_hint = ""
@@ -119,7 +140,7 @@ def load_scenarios(json_path: str | None = None) -> dict[str, PushScenario]:
             file_extension=item.get("file_extension"),
             file_path=item.get("file_path"),
             data=item.get("data"),
-            compression_type=item.get("compression_type", "ZLib"),
+            compression_type=item.get("compression_type", default_compression_type),
             content_type=item.get("content_type"),
             clickable_uri=item.get("clickable_uri"),
             printable_uri=item.get("printable_uri"),
@@ -136,16 +157,27 @@ def load_scenarios(json_path: str | None = None) -> dict[str, PushScenario]:
 
 
 def main() -> None:
-    parser = build_parser()
+    config_path = parse_config_path()
+    try:
+        defaults = load_runtime_config(config_path)
+    except (FileNotFoundError, ValueError) as error:
+        raise SystemExit(str(error)) from error
+
+    parser = build_parser(defaults)
     args = parser.parse_args()
     try:
-        scenarios = load_scenarios(args.scenario_file)
+        scenarios = load_scenarios(
+            args.scenario_file,
+            default_compression_type=defaults.default_compression_type,
+        )
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as error:
         raise SystemExit(str(error)) from error
     client = CoveoPushClient.from_env(
         max_retries=args.max_retries,
         backoff_base_seconds=args.backoff_base_seconds,
         log_dir=args.log_dir,
+        request_timeout_seconds=args.request_timeout_seconds,
+        upload_timeout_seconds=args.upload_timeout_seconds,
         dry_run=args.dry_run,
     )
 
@@ -199,6 +231,13 @@ def resolve_scenario(scenarios: dict[str, PushScenario], document_id: str) -> Pu
         available = ", ".join(sorted(scenarios))
         raise SystemExit(f"unknown scenario document_id '{document_id}'. Available: {available}")
     return scenario
+
+
+def parse_config_path() -> str | None:
+    bootstrap_parser = argparse.ArgumentParser(add_help=False)
+    bootstrap_parser.add_argument("--config", default=None)
+    bootstrap_args, _ = bootstrap_parser.parse_known_args()
+    return bootstrap_args.config
 
 
 def apply_push_overrides(scenario: PushScenario, args: argparse.Namespace) -> PushScenario:

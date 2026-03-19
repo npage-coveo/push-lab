@@ -32,6 +32,7 @@ Reference:
 - `orderingId` is available as a query parameter, but Coveo warns that setting it manually is usually not recommended.
 - For a true rebuild pattern, the items you push must receive `orderingId` values at or above the `olderthan` threshold you plan to use, otherwise the cleanup step can delete the items you just pushed.
 - `queueDelay` defaults to 15 minutes and exists to give previously enqueued operations time to complete before the delete-older-than request is processed.
+- For local testing, this harness lets you lower that default through `pushlab.yaml` with `default_queue_delay`. Setting it to `0` is useful when you want the `delete older than` request to appear in the Admin Console log browser without waiting 15 minutes.
 
 ## What this repo supports now
 
