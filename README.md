@@ -2,6 +2,13 @@
 
 This repository is a small Coveo Push API test harness.
 
+Basic commands:
+
+```bash
+./pushlab push "<document_id>"
+./pushlab rebuild
+```
+
 ## Setup
 
 The `./pushlab` wrapper runs `./.venv/bin/python`, so create the virtualenv in `.venv`.
