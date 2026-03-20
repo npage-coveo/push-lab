@@ -14,6 +14,7 @@ Reference:
 ## What matters for this repo
 
 - The `documentId` is required and should be the item URI.
+- In this harness, `payload_body.document_id` is the item URI sent to Coveo and the CLI lookup key. Local file resolution is separate: when `scenario_configuration.push_a_file` is true, the harness reads the local file from `scenario_configuration.file_path`.
 - The Push API is the source of truth. Do not propose rejecting unknown scenario keys just because this harness does not model them explicitly; if we need a new API field, we should prefer adding support over adding stricter validation.
 - When using `compressedBinaryDataFileId`, the request should include the `compressionType` query parameter.
 - The official API reference shows region-specific roots:

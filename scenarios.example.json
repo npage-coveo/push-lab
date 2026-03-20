@@ -1,29 +1,37 @@
 [
   {
-    "document_id": "file://examples/welcome.html",
-    "title": "Example File HTML",
-    "file_extension": ".html",
-    "file_path": "test-files.example/example-page.html",
-    "compression_type": "ZLib",
-    "content_type": "text/html",
-    "clickable_uri": "https://example.com/mock/welcome",
-    "printable_uri": "https://example.com/mock/welcome",
-    "metadata": {
-      "documenttype": "HTML",
-      "filename": "example-page.html",
-      "sourcetype": "Push"
+    "scenario_configuration": {
+      "push_a_file": true,
+      "file_path": "test-files.example/example-page.html",
+      "compression_type": "ZLib"
+    },
+    "payload_body": {
+      "document_id": "file://examples/welcome.html",
+      "title": "Example File HTML",
+      "file_extension": ".html",
+      "content_type": "text/html",
+      "clickable_uri": "https://example.com/mock/welcome",
+      "printable_uri": "https://example.com/mock/welcome",
+      "metadata": {
+        "documenttype": "HTML",
+        "sourcetype": "Push"
+      }
     }
   },
   {
-    "document_id": "file://examples/inline-example.html",
-    "title": "Example Inline HTML",
-    "file_extension": ".html",
-    "data": "<!doctype html><html><head><title>Example Inline HTML</title></head><body><h1>Example Inline HTML</h1><p>This mock scenario is safe to commit.</p></body></html>",
-    "content_type": "text/html",
-    "metadata": {
-      "documenttype": "HTML",
-      "filename": "inline-example.html",
-      "sourcetype": "Push"
+    "scenario_configuration": {
+      "push_a_file": false
+    },
+    "payload_body": {
+      "document_id": "file://examples/inline-example.html",
+      "title": "Example Inline HTML",
+      "file_extension": ".html",
+      "data": "<!doctype html><html><head><title>Example Inline HTML</title></head><body><article><h1>Example Inline HTML</h1><p>This mock item provides sample inline content for Example Inline HTML.</p><ul><li>Document ID: file://examples/inline-example.html</li></ul></article></body></html>",
+      "content_type": "text/html",
+      "metadata": {
+        "documenttype": "HTML",
+        "sourcetype": "Push"
+      }
     }
   }
 ]

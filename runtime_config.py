@@ -19,7 +19,6 @@ class RuntimeConfig:
     default_queue_delay: int = 15
     request_timeout_seconds: int = 30
     upload_timeout_seconds: int = 120
-    default_compression_type: str = "ZLib"
 
 
 def load_runtime_config(config_path: str | None = None) -> RuntimeConfig:
@@ -43,13 +42,6 @@ def load_runtime_config(config_path: str | None = None) -> RuntimeConfig:
         default_queue_delay=_get_typed_value(raw_config, "default_queue_delay", int, resolved_path, 15),
         request_timeout_seconds=_get_typed_value(raw_config, "request_timeout_seconds", int, resolved_path, 30),
         upload_timeout_seconds=_get_typed_value(raw_config, "upload_timeout_seconds", int, resolved_path, 120),
-        default_compression_type=_get_typed_value(
-            raw_config,
-            "default_compression_type",
-            str,
-            resolved_path,
-            "ZLib",
-        ),
     )
 
 

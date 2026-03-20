@@ -19,6 +19,7 @@ RESERVED_METADATA_FIELDS = frozenset(
         "documentId",
         "title",
         "fileExtension",
+        "filePath",
         "contentType",
         "clickableUri",
         "printableUri",
@@ -33,18 +34,26 @@ RESERVED_METADATA_FIELDS = frozenset(
 @dataclass(frozen=True)
 class PushScenario:
     document_id: str
-    title: str | None = None
-    file_extension: str | None = None
+    payload_body: dict[str, Any]
+    push_a_file: bool
     file_path: str | None = None
-    data: str | None = None
-    compression_type: str = "ZLib"
-    content_type: str | None = None
-    clickable_uri: str | None = None
-    printable_uri: str | None = None
-    parent_id: str | None = None
+    compression_type: str | None = None
     ordering_id: int | None = None
-    permissions: list[dict[str, Any]] | None = None
-    metadata: dict[str, Any] | None = None
+
+    @property
+    def title(self) -> str | None:
+        value = self.payload_body.get("title")
+        return value if isinstance(value, str) else None
+
+    @property
+    def data(self) -> str | None:
+        value = self.payload_body.get("data")
+        return value if isinstance(value, str) else None
+
+    @property
+    def file_extension(self) -> str | None:
+        value = self.payload_body.get("file_extension")
+        return value if isinstance(value, str) else None
 
 
 class CoveoPushClient:
@@ -107,12 +116,12 @@ class CoveoPushClient:
             dry_run=dry_run,
         )
 
-    def create_file_container(self, file_extension: str) -> dict:
+    def create_file_container(self, file_extension: str | None) -> dict:
         response = self.request_with_retry(
             "POST",
             f"{self.root}/organizations/{self.org}/files",
             headers={**self.headers, "Content-Type": "application/json"},
-            params={"fileExtension": file_extension},
+            params={"fileExtension": file_extension} if file_extension is not None else None,
             json={},
             timeout=self.request_timeout_seconds,
             log_context={"operation": "create_file_container", "fileExtension": file_extension},
@@ -302,53 +311,28 @@ class CoveoPushClient:
         raise RuntimeError("request_with_retry exhausted unexpectedly")
 
     def build_push_request(self, scenario: PushScenario) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-        document: dict[str, Any] = {"documentId": scenario.document_id}
-
-        if scenario.title is not None:
-            document["title"] = scenario.title
-        if scenario.file_extension is not None:
-            document["fileExtension"] = scenario.file_extension
-        if scenario.content_type is not None:
-            document["contentType"] = scenario.content_type
-
-        if scenario.clickable_uri:
-            document["clickableUri"] = scenario.clickable_uri
-        if scenario.printable_uri:
-            document["printableUri"] = scenario.printable_uri
-        if scenario.parent_id:
-            document["parentId"] = scenario.parent_id
-        if scenario.permissions:
-            document["permissions"] = scenario.permissions
-        if scenario.metadata:
-            conflicting_keys = RESERVED_METADATA_FIELDS.intersection(scenario.metadata)
-            if conflicting_keys:
-                conflicts = ", ".join(sorted(conflicting_keys))
-                raise ValueError(
-                    f"Tool constraint: scenario '{describe_scenario(scenario)}' metadata contains reserved field(s) this harness cannot place inside metadata: {conflicts}"
-                )
-            document.update(scenario.metadata)
+        document = build_document_payload(scenario)
 
         params: dict[str, Any] = {"documentId": scenario.document_id}
         binary_info: dict[str, Any] = {}
 
         if scenario.data is not None:
-            document["data"] = scenario.data
             binary_info["mode"] = "inline_data"
             binary_info["dataLength"] = len(scenario.data)
             return document, params, binary_info
 
-        if not scenario.file_path:
+        if not scenario.push_a_file:
             binary_info["mode"] = "metadata_only"
             return document, params, binary_info
 
-        file_path = Path(scenario.file_path)
+        file_path = Path(scenario.file_path or "")
         with file_path.open("rb") as input_file:
             raw_bytes = input_file.read()
 
         compressed_bytes = zlib.compress(raw_bytes, level=9)
         binary_info = {
             "mode": "file_container",
-            "filePath": scenario.file_path,
+            "resolvedFilePath": str(file_path),
             "rawBytes": len(raw_bytes),
             "compressedBytes": len(compressed_bytes),
         }
@@ -358,10 +342,6 @@ class CoveoPushClient:
             params["compressionType"] = scenario.compression_type
             return document, params, binary_info
 
-        if not scenario.file_extension:
-            raise ValueError(
-                f"Tool constraint: scenario '{describe_scenario(scenario)}' must define file_extension for file_path pushes"
-            )
         file_container = self.create_file_container(scenario.file_extension)
         self.upload_compressed_file(
             file_container["uploadUri"],
@@ -478,27 +458,76 @@ def build_request_log_payload(
 def validate_push_scenario(scenario: PushScenario) -> None:
     errors: list[str] = []
 
-    if not scenario.document_id.strip():
+    if not isinstance(scenario.document_id, str) or not scenario.document_id.strip():
         errors.append("API-invalid: document_id must be a non-empty string")
 
-    has_data = scenario.data is not None
-    has_file = bool(scenario.file_path)
-    if has_data and has_file:
-        errors.append("Tool constraint: define either file_path or data, not both")
-    if has_file and not scenario.file_extension:
-        errors.append("Tool constraint: file_extension is required for file_path pushes in this tool")
+    if not isinstance(scenario.payload_body, dict):
+        errors.append("Tool constraint: payload_body must be an object")
 
-    if scenario.file_path:
+    if scenario.file_path is not None and not isinstance(scenario.file_path, str):
+        errors.append("Tool constraint: scenario_configuration.file_path must be a string when provided")
+    if scenario.compression_type is not None and not isinstance(scenario.compression_type, str):
+        errors.append("Tool constraint: scenario_configuration.compression_type must be a string when provided")
+    if scenario.ordering_id is not None and not isinstance(scenario.ordering_id, int):
+        errors.append("Tool constraint: scenario_configuration.ordering_id must be an integer when provided")
+
+    if scenario.push_a_file:
+        if not scenario.file_path:
+            errors.append("Tool constraint: scenario_configuration.file_path is required when push_a_file is true")
+        if scenario.compression_type is None:
+            errors.append(
+                "Tool constraint: scenario_configuration.compression_type is required when push_a_file is true"
+            )
+
+    if scenario.push_a_file and scenario.file_path:
         file_path = Path(scenario.file_path)
         if not file_path.is_file():
-            errors.append(f"Tool constraint: file_path does not exist on disk: {scenario.file_path}")
-
-    if scenario.metadata is not None and not isinstance(scenario.metadata, dict):
-        errors.append("Tool constraint: metadata must be an object when provided")
+            errors.append(
+                "Tool constraint: scenario_configuration.file_path must point to an existing local file "
+                f"when push_a_file is true: {scenario.file_path}"
+            )
 
     if errors:
         joined = "; ".join(errors)
         raise ValueError(f"Scenario '{describe_scenario(scenario)}' is invalid: {joined}")
+
+
+def build_document_payload(scenario: PushScenario) -> dict[str, Any]:
+    document: dict[str, Any] = {}
+    metadata = scenario.payload_body.get("metadata")
+
+    for key, value in scenario.payload_body.items():
+        if key == "document_id":
+            document["documentId"] = value
+        elif key == "file_extension":
+            document["fileExtension"] = value
+        elif key == "content_type":
+            document["contentType"] = value
+        elif key == "clickable_uri":
+            document["clickableUri"] = value
+        elif key == "printable_uri":
+            document["printableUri"] = value
+        elif key == "parent_id":
+            document["parentId"] = value
+        elif key == "metadata":
+            continue
+        else:
+            document[key] = value
+
+    if metadata is not None:
+        if not isinstance(metadata, dict):
+            raise ValueError(
+                f"Tool constraint: scenario '{describe_scenario(scenario)}' metadata must be an object when provided"
+            )
+        conflicting_keys = RESERVED_METADATA_FIELDS.intersection(metadata)
+        if conflicting_keys:
+            conflicts = ", ".join(sorted(conflicting_keys))
+            raise ValueError(
+                f"Tool constraint: scenario '{describe_scenario(scenario)}' metadata contains reserved field(s) this harness cannot place inside metadata: {conflicts}"
+            )
+        document.update(metadata)
+
+    return document
 
 
 def compute_retry_delay(retry_after_header: str | None, attempt: int, base_seconds: float) -> float:

@@ -102,7 +102,6 @@ def add_push_overrides(parser: argparse.ArgumentParser) -> None:
 
 def load_scenarios(
     json_path: str | None = None,
-    default_compression_type: str = "ZLib",
 ) -> dict[str, PushScenario]:
     scenario_file = Path(json_path) if json_path else Path("scenarios.json")
     if not scenario_file.exists():
@@ -125,29 +124,39 @@ def load_scenarios(
         if not isinstance(item, dict):
             raise ValueError(f"Scenario #{index} must be a JSON object")
 
-        required_fields = ("document_id",)
-        missing_fields = [field for field in required_fields if field not in item]
-        if missing_fields:
-            scenario_label = item.get("title") or item.get("name") or f"#{index}"
-            missing = ", ".join(missing_fields)
+        scenario_configuration = item.get("scenario_configuration")
+        payload_body = item.get("payload_body")
+        if not isinstance(scenario_configuration, dict):
             raise ValueError(
-                f"Scenario {scenario_label!r} is missing required field(s): {missing}"
+                f"Scenario #{index} must contain a scenario_configuration object"
+            )
+        if not isinstance(payload_body, dict):
+            raise ValueError(f"Scenario #{index} must contain a payload_body object")
+
+        if "push_a_file" not in scenario_configuration:
+            raise ValueError(
+                f"Scenario #{index} is missing required field(s): scenario_configuration.push_a_file"
+            )
+        push_a_file = scenario_configuration["push_a_file"]
+        if not isinstance(push_a_file, bool):
+            raise ValueError(
+                f"Scenario #{index} has invalid scenario_configuration.push_a_file: expected bool"
+            )
+
+        document_id = payload_body.get("document_id")
+        if document_id is None:
+            scenario_label = payload_body.get("title") or payload_body.get("name") or f"#{index}"
+            raise ValueError(
+                f"Scenario {scenario_label!r} is missing required field(s): payload_body.document_id"
             )
 
         scenario = PushScenario(
-            document_id=item["document_id"],
-            title=item.get("title"),
-            file_extension=item.get("file_extension"),
-            file_path=item.get("file_path"),
-            data=item.get("data"),
-            compression_type=item.get("compression_type", default_compression_type),
-            content_type=item.get("content_type"),
-            clickable_uri=item.get("clickable_uri"),
-            printable_uri=item.get("printable_uri"),
-            parent_id=item.get("parent_id"),
-            ordering_id=item.get("ordering_id"),
-            permissions=item.get("permissions"),
-            metadata=item.get("metadata"),
+            document_id=document_id,
+            payload_body=dict(payload_body),
+            push_a_file=push_a_file,
+            file_path=scenario_configuration.get("file_path"),
+            compression_type=scenario_configuration.get("compression_type"),
+            ordering_id=scenario_configuration.get("ordering_id"),
         )
         if scenario.document_id in scenarios:
             raise ValueError(f"Duplicate scenario document_id '{scenario.document_id}' in {scenario_file}")
@@ -166,10 +175,7 @@ def main() -> None:
     parser = build_parser(defaults)
     args = parser.parse_args()
     try:
-        scenarios = load_scenarios(
-            args.scenario_file,
-            default_compression_type=defaults.default_compression_type,
-        )
+        scenarios = load_scenarios(args.scenario_file)
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as error:
         raise SystemExit(str(error)) from error
     client = CoveoPushClient.from_env(
@@ -241,21 +247,29 @@ def parse_config_path() -> str | None:
 
 
 def apply_push_overrides(scenario: PushScenario, args: argparse.Namespace) -> PushScenario:
+    payload_body = dict(scenario.payload_body)
+    if args.document_id:
+        payload_body["document_id"] = args.document_id
+    if args.title:
+        payload_body["title"] = args.title
+    if args.clickable_uri:
+        payload_body["clickable_uri"] = args.clickable_uri
+    if args.printable_uri:
+        payload_body["printable_uri"] = args.printable_uri
+
     return replace(
         scenario,
         document_id=args.document_id or scenario.document_id,
-        title=args.title or scenario.title,
-        clickable_uri=args.clickable_uri or scenario.clickable_uri,
-        printable_uri=args.printable_uri or scenario.printable_uri,
+        payload_body=payload_body,
         ordering_id=args.ordering_id if args.ordering_id is not None else scenario.ordering_id,
     )
 
 
 def describe_scenario_location(scenario: PushScenario) -> str:
-    if scenario.file_path:
-        return scenario.file_path
     if scenario.data is not None:
         return "inline data"
+    if scenario.push_a_file:
+        return f"local file via scenario_configuration.file_path: {scenario.file_path}"
     return "no payload source"
 
 
