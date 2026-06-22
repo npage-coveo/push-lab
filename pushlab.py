@@ -329,20 +329,30 @@ def rebuild_scenarios(
     selected_scenarios = [resolve_scenario(scenarios, document_id) for document_id in ordered_document_ids]
     validate_scenarios_or_exit(selected_scenarios)
 
-    if selected_scenarios:
-        response = client.push_batch_scenarios(selected_scenarios, ordering_id=rebuild_floor)
-        print(
-            f"Batched {len(selected_scenarios)} document(s) with orderingId {rebuild_floor}: "
-            f"{response.status_code} {response.text}"
-        )
-    else:
-        print("No scenarios selected for rebuild; skipping batch push.")
+    rebuild_status_started = False
+    try:
+        status_response = client.set_source_status("REBUILD")
+        rebuild_status_started = True
+        print(f"Set source status REBUILD: {status_response.status_code} {status_response.text}")
 
-    delete_response = client.delete_older_than(rebuild_floor, queue_delay=queue_delay)
-    print(
-        f"Queued delete older than {rebuild_floor} with queueDelay={queue_delay}: "
-        f"{delete_response.status_code} {delete_response.text}"
-    )
+        if selected_scenarios:
+            response = client.push_batch_scenarios(selected_scenarios, ordering_id=rebuild_floor)
+            print(
+                f"Batched {len(selected_scenarios)} document(s) with orderingId {rebuild_floor}: "
+                f"{response.status_code} {response.text}"
+            )
+        else:
+            print("No scenarios selected for rebuild; skipping batch push.")
+
+        delete_response = client.delete_older_than(rebuild_floor, queue_delay=queue_delay)
+        print(
+            f"Queued delete older than {rebuild_floor} with queueDelay={queue_delay}: "
+            f"{delete_response.status_code} {delete_response.text}"
+        )
+    finally:
+        if rebuild_status_started:
+            idle_response = client.set_source_status("IDLE")
+            print(f"Set source status IDLE: {idle_response.status_code} {idle_response.text}")
 
 
 if __name__ == "__main__":

@@ -96,7 +96,7 @@ Rebuild the source from the scenario file and then delete stale items:
 ./pushlab --scenario-file scenarios.example.json rebuild
 ```
 
-`rebuild` batches the selected documents through Coveo's `PUT /documents/batch` endpoint, then queues the existing `delete older than` cleanup using the same rebuild ordering ID.
+`rebuild` sets the Push source status to `REBUILD`, batches the selected documents through Coveo's `PUT /documents/batch` endpoint, queues the existing `delete older than` cleanup using the same rebuild ordering ID, then returns the source status to `IDLE`. The `IDLE` call runs even if an error occurs after `REBUILD` is set. Dry-run logs include the source status requests.
 
 Rebuild selected scenarios with a shorter delete grace period:
 

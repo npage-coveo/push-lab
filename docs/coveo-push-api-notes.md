@@ -47,11 +47,24 @@ Reference:
 - `permissions`
 - `orderingId`
 - `clickableUri` and `printableUri`
+- Source status updates (`POST /sources/{sourceId}/status?statusType=...`) during rebuild flows
 - `delete older than` cleanup for rebuild flows
 - Batch rebuild pushes through `PUT /documents/batch`
 - Exponential backoff with jitter for transient HTTP/network failures
-- JSONL payload logs for pushes and deletes
+- JSONL payload logs for pushes, deletes, and source status changes
 - Dry-run previews for push, delete, and rebuild flows
+
+### Source status
+
+The rebuild command brackets its API work with source status updates:
+
+1. `POST .../sources/{sourceId}/status?statusType=REBUILD` — creates a rebuild activity
+2. Batch push + delete older than
+3. `POST .../sources/{sourceId}/status?statusType=IDLE` — marks the activity completed
+
+Setting `IDLE` tells Coveo the harness has finished queuing its operations. It does not prove every item has completed all downstream indexing stages; Coveo processes the queued operations asynchronously after the status is set.
+
+The `set_source_status` client method accepts `IDLE`, `INCREMENTAL`, `REBUILD`, and `REFRESH`.
 
 ## Still not modeled explicitly
 

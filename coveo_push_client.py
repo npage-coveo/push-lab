@@ -336,6 +336,49 @@ class CoveoPushClient:
         response.raise_for_status()
         return response
 
+    def set_source_status(self, status_type: str) -> requests.Response:
+        VALID_STATUS_TYPES = {"IDLE", "INCREMENTAL", "REBUILD", "REFRESH"}
+        normalized = status_type.strip().upper()
+        if normalized not in VALID_STATUS_TYPES:
+            valid = ", ".join(sorted(VALID_STATUS_TYPES))
+            raise ValueError(
+                f"Tool constraint: statusType must be one of {valid}, got '{status_type}'"
+            )
+
+        request_url = f"{self.root}/organizations/{self.org}/sources/{self.source}/status"
+        request_headers = {**self.headers, "Accept": "application/json"}
+        request_params = {"statusType": normalized}
+        log_context = {
+            "operation": "set_source_status",
+            "statusType": normalized,
+        }
+
+        if self.dry_run:
+            response = make_dry_run_response(202, "DRY RUN: source status update skipped")
+            self.log_http_exchange(
+                request={
+                    "method": "POST",
+                    "url": request_url,
+                    "headers": sanitize_headers(request_headers),
+                    "params": request_params,
+                    "timeout": self.request_timeout_seconds,
+                },
+                response=response,
+                context={**log_context, "dry_run": True},
+            )
+            return response
+
+        response = self.request_with_retry(
+            "POST",
+            request_url,
+            headers=request_headers,
+            params=request_params,
+            timeout=self.request_timeout_seconds,
+            log_context=log_context,
+        )
+        response.raise_for_status()
+        return response
+
     def delete_older_than(self, ordering_id: int, queue_delay: int = 15) -> requests.Response:
         request_url = f"{self.root}/organizations/{self.org}/sources/{self.source}/documents/olderthan"
         request_headers = {**self.headers, "Accept": "application/json"}
