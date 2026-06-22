@@ -96,6 +96,8 @@ Rebuild the source from the scenario file and then delete stale items:
 ./pushlab --scenario-file scenarios.example.json rebuild
 ```
 
+`rebuild` batches the selected documents through Coveo's `PUT /documents/batch` endpoint, then queues the existing `delete older than` cleanup using the same rebuild ordering ID.
+
 Rebuild selected scenarios with a shorter delete grace period:
 
 ```bash
@@ -214,4 +216,4 @@ Supported settings:
 
 When testing `delete older than` flows, set `default_queue_delay: 0` in `pushlab.yaml` or pass `--queue-delay 0`. That avoids waiting 15 minutes to see the operation appear in the Admin Console log browser.
 
-See [docs/coveo-push-api-notes.md](/home/npage/projects/tools/push-lab/docs/coveo-push-api-notes.md) for repo-specific notes from the official Add or update an item reference.
+See [docs/coveo-push-api-notes.md](/home/npage/projects/tools/push-lab/docs/coveo-push-api-notes.md) for repo-specific notes from the official Push API references, including the batch rebuild flow.

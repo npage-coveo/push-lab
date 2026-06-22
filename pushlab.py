@@ -71,7 +71,7 @@ def build_parser(defaults: RuntimeConfig) -> argparse.ArgumentParser:
 
     rebuild_parser = subparsers.add_parser(
         "rebuild",
-        help="Push the current scenarios and then delete items older than the rebuild baseline",
+        help="Batch the current scenarios and then delete items older than the rebuild baseline",
     )
     rebuild_parser.add_argument(
         "scenarios",
@@ -326,18 +326,17 @@ def rebuild_scenarios(
     ordered_document_ids = selected_document_ids or list(scenarios.keys())
     base_ordering_id = start_ordering_id or int(time.time() * 1000)
     rebuild_floor = base_ordering_id + 1
-    selected_scenarios = [
-        replace(resolve_scenario(scenarios, document_id), ordering_id=base_ordering_id + index + 1)
-        for index, document_id in enumerate(ordered_document_ids)
-    ]
+    selected_scenarios = [resolve_scenario(scenarios, document_id) for document_id in ordered_document_ids]
     validate_scenarios_or_exit(selected_scenarios)
 
-    for scenario in selected_scenarios:
-        response = client.push_scenario(scenario)
+    if selected_scenarios:
+        response = client.push_batch_scenarios(selected_scenarios, ordering_id=rebuild_floor)
         print(
-            f"Pushed {scenario.document_id} with orderingId {scenario.ordering_id}: "
+            f"Batched {len(selected_scenarios)} document(s) with orderingId {rebuild_floor}: "
             f"{response.status_code} {response.text}"
         )
+    else:
+        print("No scenarios selected for rebuild; skipping batch push.")
 
     delete_response = client.delete_older_than(rebuild_floor, queue_delay=queue_delay)
     print(

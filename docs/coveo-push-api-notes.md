@@ -39,7 +39,7 @@ Reference:
 
 - Inline `data` pushes for HTML/text items
 - File-container upload flow with `compressedBinaryDataFileId`
-- `compressionType` query parameter for file-container pushes only
+- `compressionType` query parameter for single-document file-container pushes, plus batch-item `compressionType` during rebuilds
 - Metadata-only pushes with no `data` or `compressedBinaryDataFileId`
 - Region override through `COVEO_PUSH_API_ROOT`
 - Scenario metadata via `metadata`
@@ -48,6 +48,7 @@ Reference:
 - `orderingId`
 - `clickableUri` and `printableUri`
 - `delete older than` cleanup for rebuild flows
+- Batch rebuild pushes through `PUT /documents/batch`
 - Exponential backoff with jitter for transient HTTP/network failures
 - JSONL payload logs for pushes and deletes
 - Dry-run previews for push, delete, and rebuild flows
@@ -55,6 +56,6 @@ Reference:
 ## Still not modeled explicitly
 
 - Inline `compressedBinaryData` in `scenarios.json`
-- Batch item operations
+- General-purpose batch add/update/delete bodies outside the rebuild flow
 
 Those can be added later if we want to test those paths too.

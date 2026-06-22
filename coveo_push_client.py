@@ -1,6 +1,8 @@
 import os
 import random
 import time
+import gzip
+import lzma
 import zlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -14,6 +16,13 @@ from dotenv import load_dotenv
 
 
 DEFAULT_ROOT = "https://api.cloud.coveo.com/push/v1"
+SUPPORTED_COMPRESSION_TYPES = {
+    "UNCOMPRESSED": "UNCOMPRESSED",
+    "DEFLATE": "DEFLATE",
+    "GZIP": "GZIP",
+    "LZMA": "LZMA",
+    "ZLIB": "ZLIB",
+}
 RESERVED_METADATA_FIELDS = frozenset(
     {
         "documentId",
@@ -136,10 +145,24 @@ class CoveoPushClient:
         compressed_bytes: bytes,
         log_context: dict[str, Any] | None = None,
     ) -> None:
+        self.upload_file_container_bytes(
+            upload_uri,
+            required_headers,
+            compressed_bytes,
+            log_context=log_context,
+        )
+
+    def upload_file_container_bytes(
+        self,
+        upload_uri: str,
+        required_headers: dict,
+        payload_bytes: bytes,
+        log_context: dict[str, Any] | None = None,
+    ) -> None:
         response = self.request_with_retry(
             "PUT",
             upload_uri,
-            data=compressed_bytes,
+            data=payload_bytes,
             headers=required_headers,
             timeout=self.upload_timeout_seconds,
             log_context=log_context,
@@ -183,6 +206,100 @@ class CoveoPushClient:
             json=document,
             timeout=self.request_timeout_seconds,
             log_context=log_context,
+        )
+        response.raise_for_status()
+        return response
+
+    def push_batch_scenarios(
+        self,
+        scenarios: list[PushScenario],
+        ordering_id: int | None = None,
+    ) -> requests.Response:
+        if not scenarios:
+            raise ValueError("Tool constraint: cannot push an empty batch")
+
+        for scenario in scenarios:
+            validate_push_scenario(scenario)
+
+        batch_document_body, batch_summary = self.build_batch_request(scenarios)
+        batch_bytes = json.dumps(batch_document_body, ensure_ascii=True).encode("utf-8")
+        request_url = f"{self.root}/organizations/{self.org}/sources/{self.source}/documents/batch"
+        request_headers = {**self.headers, "Accept": "application/json"}
+        request_params: dict[str, Any] = {}
+        if ordering_id is not None:
+            request_params["orderingId"] = ordering_id
+
+        log_context = {
+            "operation": "push_batch",
+            "documentCount": len(scenarios),
+            "documentIds": [scenario.document_id for scenario in scenarios],
+            "orderingId": ordering_id,
+            "items": batch_summary,
+        }
+
+        if self.dry_run:
+            response = make_dry_run_response(202, "DRY RUN: batch push skipped")
+            dry_run_file_id = "<generated at runtime>"
+            self.log_http_exchange(
+                request={
+                    "method": "PUT",
+                    "url": "<generated batch uploadUri at runtime>",
+                    "headers": {},
+                    "data": summarize_request_data(batch_bytes),
+                    "timeout": self.upload_timeout_seconds,
+                },
+                response=response,
+                context={
+                    **log_context,
+                    "operation": "upload_batch_definition",
+                    "fileId": dry_run_file_id,
+                    "batchDocumentBody": batch_document_body,
+                    "dry_run": True,
+                },
+            )
+            self.log_http_exchange(
+                request={
+                    "method": "PUT",
+                    "url": request_url,
+                    "headers": sanitize_headers(request_headers),
+                    "params": {**request_params, "fileId": dry_run_file_id},
+                    "timeout": self.request_timeout_seconds,
+                },
+                response=response,
+                context={
+                    **log_context,
+                    "fileId": dry_run_file_id,
+                    "batchDocumentBody": batch_document_body,
+                    "dry_run": True,
+                },
+            )
+            return response
+
+        batch_container = self.create_file_container(None)
+        self.upload_file_container_bytes(
+            batch_container["uploadUri"],
+            batch_container.get("requiredHeaders", {}),
+            batch_bytes,
+            log_context={
+                **log_context,
+                "operation": "upload_batch_definition",
+                "fileId": batch_container["fileId"],
+                "batchDocumentBody": batch_document_body,
+            },
+        )
+
+        request_params["fileId"] = batch_container["fileId"]
+        response = self.request_with_retry(
+            "PUT",
+            request_url,
+            headers=request_headers,
+            params=request_params,
+            timeout=self.request_timeout_seconds,
+            log_context={
+                **log_context,
+                "fileId": batch_container["fileId"],
+                "batchDocumentBody": batch_document_body,
+            },
         )
         response.raise_for_status()
         return response
@@ -325,25 +442,15 @@ class CoveoPushClient:
             binary_info["mode"] = "metadata_only"
             return document, params, binary_info
 
-        file_path = Path(scenario.file_path or "")
-        with file_path.open("rb") as input_file:
-            raw_bytes = input_file.read()
-
-        compressed_bytes = zlib.compress(raw_bytes, level=9)
-        binary_info = {
-            "mode": "file_container",
-            "resolvedFilePath": str(file_path),
-            "rawBytes": len(raw_bytes),
-            "compressedBytes": len(compressed_bytes),
-        }
+        compressed_bytes, binary_info, compression_type = prepare_local_file_push_binary(scenario)
 
         if self.dry_run:
             document["compressedBinaryDataFileId"] = "<generated at runtime>"
-            params["compressionType"] = scenario.compression_type
+            params["compressionType"] = compression_type
             return document, params, binary_info
 
         file_container = self.create_file_container(scenario.file_extension)
-        self.upload_compressed_file(
+        self.upload_file_container_bytes(
             file_container["uploadUri"],
             file_container.get("requiredHeaders", {}),
             compressed_bytes,
@@ -356,8 +463,65 @@ class CoveoPushClient:
             },
         )
         document["compressedBinaryDataFileId"] = file_container["fileId"]
-        params["compressionType"] = scenario.compression_type
+        params["compressionType"] = compression_type
         return document, params, binary_info
+
+    def build_batch_request(
+        self,
+        scenarios: list[PushScenario],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        add_or_update: list[dict[str, Any]] = []
+        batch_summary: list[dict[str, Any]] = []
+
+        for scenario in scenarios:
+            document, binary_info = self.build_batch_item(scenario)
+            add_or_update.append(document)
+            batch_summary.append(
+                {
+                    "documentId": scenario.document_id,
+                    "title": scenario.title,
+                    "binary": binary_info,
+                }
+            )
+
+        return {"addOrUpdate": add_or_update}, batch_summary
+
+    def build_batch_item(self, scenario: PushScenario) -> tuple[dict[str, Any], dict[str, Any]]:
+        document = build_document_payload(scenario)
+
+        if scenario.data is not None:
+            binary_info = {
+                "mode": "inline_data",
+                "dataLength": len(scenario.data),
+            }
+            return document, binary_info
+
+        if not scenario.push_a_file:
+            binary_info = {"mode": "metadata_only"}
+            return document, binary_info
+
+        compressed_bytes, binary_info, compression_type = prepare_local_file_push_binary(scenario)
+        document["compressionType"] = compression_type
+
+        if self.dry_run:
+            document["compressedBinaryDataFileId"] = "<generated at runtime>"
+            return document, binary_info
+
+        file_container = self.create_file_container(scenario.file_extension)
+        self.upload_file_container_bytes(
+            file_container["uploadUri"],
+            file_container.get("requiredHeaders", {}),
+            compressed_bytes,
+            log_context={
+                "operation": "upload_compressed_file",
+                "documentId": scenario.document_id,
+                "title": scenario.title,
+                "binary": binary_info,
+                "fileId": file_container["fileId"],
+            },
+        )
+        document["compressedBinaryDataFileId"] = file_container["fileId"]
+        return document, binary_info
 
     def log_event(self, event_type: str, payload: dict[str, Any]) -> None:
         entry = {
@@ -478,6 +642,12 @@ def validate_push_scenario(scenario: PushScenario) -> None:
             errors.append(
                 "Tool constraint: scenario_configuration.compression_type is required when push_a_file is true"
             )
+        elif not is_supported_compression_type(scenario.compression_type):
+            supported = ", ".join(sorted(SUPPORTED_COMPRESSION_TYPES.values()))
+            errors.append(
+                "Tool constraint: scenario_configuration.compression_type must be one of "
+                f"{supported} when this harness compresses a local file"
+            )
 
     if scenario.push_a_file and scenario.file_path:
         file_path = Path(scenario.file_path)
@@ -547,3 +717,58 @@ def make_dry_run_response(status_code: int, text: str) -> Response:
     response.status_code = status_code
     response._content = text.encode("utf-8")
     return response
+
+
+def prepare_local_file_push_binary(scenario: PushScenario) -> tuple[bytes, dict[str, Any], str]:
+    file_path = Path(scenario.file_path or "")
+    with file_path.open("rb") as input_file:
+        raw_bytes = input_file.read()
+
+    compression_type = normalize_compression_type(scenario.compression_type)
+    compressed_bytes = compress_binary_data(raw_bytes, compression_type)
+    binary_info = {
+        "mode": "file_container",
+        "resolvedFilePath": str(file_path),
+        "rawBytes": len(raw_bytes),
+        "compressedBytes": len(compressed_bytes),
+        "compressionType": compression_type,
+    }
+    return compressed_bytes, binary_info, compression_type
+
+
+def normalize_compression_type(value: str | None) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("Tool constraint: scenario_configuration.compression_type must be a non-empty string")
+
+    normalized = value.strip().replace("-", "").replace("_", "").upper()
+    compression_type = SUPPORTED_COMPRESSION_TYPES.get(normalized)
+    if compression_type is None:
+        supported = ", ".join(sorted(SUPPORTED_COMPRESSION_TYPES.values()))
+        raise ValueError(
+            "Tool constraint: scenario_configuration.compression_type must be one of "
+            f"{supported} when this harness compresses a local file"
+        )
+    return compression_type
+
+
+def is_supported_compression_type(value: str | None) -> bool:
+    try:
+        normalize_compression_type(value)
+    except ValueError:
+        return False
+    return True
+
+
+def compress_binary_data(raw_bytes: bytes, compression_type: str) -> bytes:
+    if compression_type == "UNCOMPRESSED":
+        return raw_bytes
+    if compression_type == "DEFLATE":
+        compressor = zlib.compressobj(level=9, wbits=-zlib.MAX_WBITS)
+        return compressor.compress(raw_bytes) + compressor.flush()
+    if compression_type == "GZIP":
+        return gzip.compress(raw_bytes, compresslevel=9)
+    if compression_type == "LZMA":
+        return lzma.compress(raw_bytes)
+    if compression_type == "ZLIB":
+        return zlib.compress(raw_bytes, level=9)
+    raise ValueError(f"Unsupported compression type: {compression_type}")
