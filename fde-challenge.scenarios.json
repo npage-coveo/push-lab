@@ -1,0 +1,85 @@
+[
+  {
+    "scenario_configuration": {
+      "push_a_file": false
+    },
+    "payload_body": {
+      "document_id": "file://fde-challenge/exact-url-control.html",
+      "title": "Analytics Importer Exact URL Control",
+      "file_extension": ".html",
+      "content_type": "text/html",
+      "clickable_uri": "https://prod.example.test/docs/exact-url-control",
+      "printable_uri": "https://prod.example.test/docs/exact-url-control",
+      "data": "<!doctype html><html><head><title>Analytics Importer Exact URL Control</title></head><body><main><h1>Analytics Importer Exact URL Control</h1><p>This receiver document intentionally keeps the same URL as the donor click event. It validates the exact URL match path before inferred rewrites are used.</p></main></body></html>",
+      "metadata": {
+        "documenttype": "HTML",
+        "sourcetype": "Push",
+        "analytics_import_case": "exact-url-control",
+        "donor_document_url": "https://prod.example.test/docs/exact-url-control",
+        "expected_match_strategy": "exact-url"
+      }
+    }
+  },
+  {
+    "scenario_configuration": {
+      "push_a_file": false
+    },
+    "payload_body": {
+      "document_id": "file://fde-challenge/host-rewrite-reference.html",
+      "title": "Analytics Importer Host Rewrite Reference",
+      "file_extension": ".html",
+      "content_type": "text/html",
+      "clickable_uri": "https://receiver.example.test/docs/host-rewrite-reference",
+      "printable_uri": "https://receiver.example.test/docs/host-rewrite-reference",
+      "data": "<!doctype html><html><head><title>Analytics Importer Host Rewrite Reference</title></head><body><main><h1>Analytics Importer Host Rewrite Reference</h1><p>This receiver document is the sample an admin can select to teach the importer that production URLs map to receiver URLs by host while preserving the path.</p></main></body></html>",
+      "metadata": {
+        "documenttype": "HTML",
+        "sourcetype": "Push",
+        "analytics_import_case": "host-rewrite-reference",
+        "donor_document_url": "https://prod.example.test/docs/host-rewrite-reference",
+        "expected_match_strategy": "url-prefix-reference"
+      }
+    }
+  },
+  {
+    "scenario_configuration": {
+      "push_a_file": false
+    },
+    "payload_body": {
+      "document_id": "file://fde-challenge/host-rewrite-inferred.html",
+      "title": "Analytics Importer Host Rewrite Inferred",
+      "file_extension": ".html",
+      "content_type": "text/html",
+      "clickable_uri": "https://receiver.example.test/docs/host-rewrite-inferred",
+      "printable_uri": "https://receiver.example.test/docs/host-rewrite-inferred",
+      "data": "<!doctype html><html><head><title>Analytics Importer Host Rewrite Inferred</title></head><body><main><h1>Analytics Importer Host Rewrite Inferred</h1><p>This receiver document should be matched automatically after the reference document establishes the production-to-receiver host rewrite pattern.</p></main></body></html>",
+      "metadata": {
+        "documenttype": "HTML",
+        "sourcetype": "Push",
+        "analytics_import_case": "host-rewrite-inferred",
+        "donor_document_url": "https://prod.example.test/docs/host-rewrite-inferred",
+        "expected_match_strategy": "url-prefix-reference"
+      }
+    }
+  },
+  {
+    "scenario_configuration": {
+      "push_a_file": false
+    },
+    "payload_body": {
+      "document_id": "file://fde-challenge/query-suggestions-control.html",
+      "title": "Analytics Importer Query Suggestions Control",
+      "file_extension": ".html",
+      "content_type": "text/html",
+      "clickable_uri": "https://receiver.example.test/docs/query-suggestions-control",
+      "printable_uri": "https://receiver.example.test/docs/query-suggestions-control",
+      "data": "<!doctype html><html><head><title>Analytics Importer Query Suggestions Control</title></head><body><main><h1>Analytics Importer Query Suggestions Control</h1><p>This document gives the receiver index searchable language for query suggestion smoke tests while ART click mapping is being validated.</p></main></body></html>",
+      "metadata": {
+        "documenttype": "HTML",
+        "sourcetype": "Push",
+        "analytics_import_case": "query-suggestions-control",
+        "expected_model_signal": "query-suggestions"
+      }
+    }
+  }
+]
