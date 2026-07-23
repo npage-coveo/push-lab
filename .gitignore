@@ -5,6 +5,8 @@ __pycache__/
 *.py[cod]
 *.bak
 scenarios.json
+*.scenarios.json
+!*.scenarios.example.json
 pushlab.yaml
 
 # Local logs and generated artifacts

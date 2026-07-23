@@ -190,7 +190,7 @@ Each run writes a JSONL payload log under `logs/payloads/` by default. You can c
 4. Put Push API body fields in `payload_body`.
 5. Run it by document ID with `./pushlab push "<payload_body.document_id>"`.
 
-The live `scenarios.json` and `test-files/` directories are intentionally local-only and ignored by git. Start from [scenarios.example.json](/home/npage/projects/tools/push-lab/scenarios.example.json) and [test-files.example/README.md](/home/npage/projects/tools/push-lab/test-files.example/README.md). You can run the tracked examples as-is with `--scenario-file scenarios.example.json`, or copy them into your own local `scenarios.json` and `test-files/` workspace.
+The live `scenarios.json`, `*.scenarios.json`, and `test-files/` directories are intentionally local-only and ignored by git. Start from [scenarios.example.json](/home/npage/projects/tools/push-lab/scenarios.example.json), another tracked `*.scenarios.example.json` suite, and [test-files.example/README.md](/home/npage/projects/tools/push-lab/test-files.example/README.md). You can run tracked examples as-is with `--scenario-file scenarios.example.json`, or copy them into your own local `scenarios.json` and `test-files/` workspace.
 
 ## Runtime Defaults
 
